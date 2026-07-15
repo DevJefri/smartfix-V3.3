@@ -1,0 +1,12 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: bff-api-test
+              uri: http://localhost:8083
+              predicates:
+                - Path=/bff/**
+sentry:
+  dsn:

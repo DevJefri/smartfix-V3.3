@@ -1,0 +1,7 @@
+CREATE TABLE repuestos (
+    id BIGSERIAL PRIMARY KEY,
+    sku VARCHAR(50) NOT NULL UNIQUE,
+    nombre VARCHAR(150) NOT NULL,
+    stock INTEGER NOT NULL DEFAULT 0,
+    precio_unitario NUMERIC(12, 2) NOT NULL
+);

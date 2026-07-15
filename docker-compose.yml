@@ -1,0 +1,524 @@
+version: "3.9"
+
+# Variables de entorno compartidas por todos los microservicios de negocio
+# para reportar errores a GlitchTip (compatible con el SDK de Sentry).
+# El DSN apunta al contenedor "glitchtip-web" (nombre del servicio en esta
+# misma red de Docker), no a "localhost" -- localhost dentro de un
+# contenedor se refiere a si mismo, no al host ni a otro contenedor.
+# Si necesitas desactivar el reporte, deja SENTRY_DSN en blanco.
+x-sentry-env: &sentry-env
+  SENTRY_DSN: http://e10df6d034a2486681be29b03df413a5@localhost:8000/1
+  SENTRY_ENVIRONMENT: docker
+
+services:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Bases de datos (una por microservicio -> Database per Service)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  db-cliente:
+    image: postgres:16-alpine
+    container_name: db_smartfix_customers
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_clientes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_customers:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_clientes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-reparacion:
+    image: postgres:16-alpine
+    container_name: db_smartfix_repairs
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_reparaciones
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_repairs:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_reparaciones"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-inventario:
+    image: postgres:16-alpine
+    container_name: db_smartfix_inventario
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_inventario
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_inventario:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_inventario"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-factura:
+    image: postgres:16-alpine
+    container_name: db_smartfix_facturas
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_facturas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgdata_facturas:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_facturas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-encuesta:
+    image: postgres:16-alpine
+    container_name: db_smartfix_encuestas
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_encuestas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - pgdata_encuestas:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_encuestas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-auditoria:
+    image: postgres:16-alpine
+    container_name: db_smartfix_auditoria
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_smartfix_auditoria
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"
+    volumes:
+      - pgdata_auditoria:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_smartfix_auditoria"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Microservicios originales (C1/C2)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  ms-cliente:
+    build:
+      context: ./ms-cliente
+      dockerfile: Dockerfile
+    container_name: ms_customer
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-cliente:5432/db_smartfix_clientes
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+      JWT_EXPIRATION_MS: "3600000"
+    depends_on:
+      db-cliente:
+        condition: service_healthy
+    networks:
+      - smartfix-net
+
+  ms-reparacion:
+    build:
+      context: ./ms-reparacion
+      dockerfile: Dockerfile
+    container_name: ms_repair
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-reparacion:5432/db_smartfix_reparaciones
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+      SERVICES_CLIENTE_URL: http://ms-cliente:8081
+    depends_on:
+      db-reparacion:
+        condition: service_healthy
+      ms-cliente:
+        condition: service_started
+    networks:
+      - smartfix-net
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 9 microservicios adicionales
+  # ══════════════════════════════════════════════════════════════════════════
+
+  ms-notificacion:
+    build:
+      context: ./ms-notificacion
+      dockerfile: Dockerfile
+    container_name: ms_notificacion
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    environment:
+      <<: *sentry-env
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    networks:
+      - smartfix-net
+
+  ms-cotizacion:
+    build:
+      context: ./ms-cotizacion
+      dockerfile: Dockerfile
+    container_name: ms_cotizacion
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      <<: *sentry-env
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    networks:
+      - smartfix-net
+
+  ms-garantia:
+    build:
+      context: ./ms-garantia
+      dockerfile: Dockerfile
+    container_name: ms_garantia
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      <<: *sentry-env
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    networks:
+      - smartfix-net
+
+  ms-conversor:
+    build:
+      context: ./ms-conversor
+      dockerfile: Dockerfile
+    container_name: ms_conversor
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    environment:
+      <<: *sentry-env
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    networks:
+      - smartfix-net
+
+  ms-diagnostico:
+    build:
+      context: ./ms-diagnostico
+      dockerfile: Dockerfile
+    container_name: ms_diagnostico
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      <<: *sentry-env
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    networks:
+      - smartfix-net
+
+  ms-inventario:
+    build:
+      context: ./ms-inventario
+      dockerfile: Dockerfile
+    container_name: ms_inventario
+    restart: unless-stopped
+    ports:
+      - "8089:8089"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-inventario:5432/db_smartfix_inventario
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    depends_on:
+      db-inventario:
+        condition: service_healthy
+    networks:
+      - smartfix-net
+
+  ms-factura:
+    build:
+      context: ./ms-factura
+      dockerfile: Dockerfile
+    container_name: ms_factura
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-factura:5432/db_smartfix_facturas
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    depends_on:
+      db-factura:
+        condition: service_healthy
+    networks:
+      - smartfix-net
+
+  ms-encuesta:
+    build:
+      context: ./ms-encuesta
+      dockerfile: Dockerfile
+    container_name: ms_encuesta
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-encuesta:5432/db_smartfix_encuestas
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    depends_on:
+      db-encuesta:
+        condition: service_healthy
+    networks:
+      - smartfix-net
+
+  ms-auditoria:
+    build:
+      context: ./ms-auditoria
+      dockerfile: Dockerfile
+    container_name: ms_auditoria
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    environment:
+      <<: *sentry-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-auditoria:5432/db_smartfix_auditoria
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+    depends_on:
+      db-auditoria:
+        condition: service_healthy
+    networks:
+      - smartfix-net
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # BFF: unico componente que habla directamente con los 11 microservicios
+  # ══════════════════════════════════════════════════════════════════════════
+
+  bff:
+    build:
+      context: ./bff
+      dockerfile: Dockerfile
+    container_name: bff
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *sentry-env
+      SERVICES_CLIENTE_URL: http://ms-cliente:8081
+      SERVICES_REPARACION_URL: http://ms-reparacion:8082
+      SERVICES_NOTIFICACION_URL: http://ms-notificacion:8084
+      SERVICES_COTIZACION_URL: http://ms-cotizacion:8085
+      SERVICES_GARANTIA_URL: http://ms-garantia:8086
+      SERVICES_CONVERSOR_URL: http://ms-conversor:8087
+      SERVICES_DIAGNOSTICO_URL: http://ms-diagnostico:8088
+      SERVICES_INVENTARIO_URL: http://ms-inventario:8089
+      SERVICES_FACTURA_URL: http://ms-factura:8090
+      SERVICES_ENCUESTA_URL: http://ms-encuesta:8091
+      SERVICES_AUDITORIA_URL: http://ms-auditoria:8092
+      JWT_SECRET: smartfix-secret-key-256-bits-minimo-para-hs256-aqui
+      JWT_EXPIRATION_MS: "3600000"
+    depends_on:
+      ms-cliente:
+        condition: service_started
+      ms-reparacion:
+        condition: service_started
+      ms-notificacion:
+        condition: service_started
+      ms-cotizacion:
+        condition: service_started
+      ms-garantia:
+        condition: service_started
+      ms-conversor:
+        condition: service_started
+      ms-diagnostico:
+        condition: service_started
+      ms-inventario:
+        condition: service_started
+      ms-factura:
+        condition: service_started
+      ms-encuesta:
+        condition: service_started
+      ms-auditoria:
+        condition: service_started
+    networks:
+      - smartfix-net
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # API Gateway: UNICO punto de entrada publico del sistema (regla de oro).
+  # Todo el trafico externo entra por aqui (puerto 8080) y se reenvia al BFF.
+  # ══════════════════════════════════════════════════════════════════════════
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *sentry-env
+      SERVICES_BFF_URL: http://bff:8083
+    depends_on:
+      bff:
+        condition: service_started
+    networks:
+      - smartfix-net
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GlitchTip: plataforma de logs/errores auto-hospedada, compatible con el
+  # SDK de Sentry. UI en http://localhost:8000. El DSN ya esta configurado
+  # arriba en x-sentry-env, apuntando a glitchtip-web:8000 (nombre interno
+  # del contenedor). Si vuelves a crear el proyecto en GlitchTip, actualiza
+  # el DSN en x-sentry-env (mantén el host "glitchtip-web", solo cambia la
+  # key y el id del proyecto que te muestre la UI).
+  # ══════════════════════════════════════════════════════════════════════════
+
+  glitchtip-postgres:
+    image: postgres:16-alpine
+    container_name: glitchtip_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    volumes:
+      - pgdata_glitchtip:/var/lib/postgresql/data
+    networks:
+      - smartfix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: glitchtip_redis
+    restart: unless-stopped
+    networks:
+      - smartfix-net
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:latest
+    container_name: glitchtip_web
+    restart: unless-stopped
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: smartfix-glitchtip-secret-key-cambiar-en-produccion
+      PORT: 8000
+      EMAIL_URL: consolemail://
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: smartfix@example.com
+      CELERY_WORKER_AUTOSCALE: "1,3"
+      ENABLE_USER_REGISTRATION: "true"
+    volumes:
+      - glitchtip_uploads:/code/uploads
+    networks:
+      - smartfix-net
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    container_name: glitchtip_worker
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: smartfix-glitchtip-secret-key-cambiar-en-produccion
+      EMAIL_URL: consolemail://
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      DEFAULT_FROM_EMAIL: smartfix@example.com
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    volumes:
+      - glitchtip_uploads:/code/uploads
+    networks:
+      - smartfix-net
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:latest
+    container_name: glitchtip_migrate
+    command: ./manage.py migrate
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      SECRET_KEY: smartfix-glitchtip-secret-key-cambiar-en-produccion
+    networks:
+      - smartfix-net
+
+volumes:
+  pgdata_customers:
+  pgdata_repairs:
+  pgdata_inventario:
+  pgdata_facturas:
+  pgdata_encuestas:
+  pgdata_auditoria:
+  pgdata_glitchtip:
+  glitchtip_uploads:
+
+networks:
+  smartfix-net:
+    driver: bridge

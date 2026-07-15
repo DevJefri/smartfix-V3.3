@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            # Todo el trafico de negocio (autenticacion, dashboard y los 9
+            # microservicios adicionales) pasa exclusivamente por el BFF.
+            - id: bff-api
+              uri: ${SERVICES_BFF_URL:http://localhost:8083}
+              predicates:
+                - Path=/bff/**
+            # Se reenvia tambien el Swagger del BFF, que es el que agrupa
+            # y documenta a todos los microservicios del sistema.
+            - id: bff-swagger-ui
+              uri: ${SERVICES_BFF_URL:http://localhost:8083}
+              predicates:
+                - Path=/swagger-ui/**,/swagger-ui.html,/v3/api-docs/**,/v3/api-docs.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# GlitchTip (compatible con el SDK de Sentry).
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:development}
+  logging:
+    minimum-event-level: error
+    minimum-breadcrumb-level: info
+  traces-sample-rate: 1.0
