@@ -60,7 +60,7 @@ Primera etapa del proyecto: construccion de los dos microservicios principales, 
 
 ## Observaciones
 
-- Se verificó el proceso de despliegue local mediante Docker Compose.
+- Se verificó el proceso de despliegue local mediante Docker Compose y quedo claro que esta corriendo de forma correcta.
 
 **Resultado de esta etapa:**
 - Dos microservicios funcionando de forma independiente.
