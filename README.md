@@ -58,6 +58,10 @@ Primera etapa del proyecto: construccion de los dos microservicios principales, 
 3. El service llama a `ClienteVerificacionService`, que consulta a `ms-cliente` (`GET /api/customers/{rut}`) para confirmar que el cliente existe antes de continuar.
 4. Si el cliente existe, se guarda la reparacion en la base de datos de `ms-reparacion` con estado inicial `RECIBIDO`.
 
+## Observaciones
+
+- Se verificó el proceso de despliegue local mediante Docker Compose.
+
 **Resultado de esta etapa:**
 - Dos microservicios funcionando de forma independiente.
 - Autenticacion con JWT en `ms-cliente` (registro y login).
