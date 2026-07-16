@@ -62,6 +62,8 @@ Primera etapa del proyecto: construccion de los dos microservicios principales, 
 
 - Se verificó el proceso de despliegue local mediante Docker Compose y quedo claro que esta corriendo de forma correcta.
 
+- Fue un proyecto complejo de realizar. tener cuidado con el uso de la RAM 
+
 **Resultado de esta etapa:**
 - Dos microservicios funcionando de forma independiente.
 - Autenticacion con JWT en `ms-cliente` (registro y login).
